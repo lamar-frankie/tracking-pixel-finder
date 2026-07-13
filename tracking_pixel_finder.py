@@ -19,56 +19,49 @@ KNOWN_TRACKERS = [
     "ads.linkedin.com"         # LinkedIn Insight Tag
 ]
 
-async def check_domain_for_pixels(domain):
-    async with async_playwright() as p:
-        url = f"https://{domain}"
-        print(f"\nScanning: {url}")
+async def check_domain_for_pixels(domain, playwright):
+    url = f"https://{domain}"
+    print(f"\nScanning: {url}")
+
+    try:
+        browser = await playwright.chromium.launch(headless=True)
+    except Exception:
+        print(
+            "  [!] Playwright could not launch Chromium. Install the missing system "
+            "libraries and browser dependencies, then run: playwright install --with-deps"
+        )
+        return None
+
+    try:
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        found_trackers = []
+
+        page.on("request", lambda request: analyze_request(request, domain, found_trackers))
 
         try:
-            # Launch a headless Chromium browser
-            browser = await p.chromium.launch(headless=True)
-        except Exception:
-            print(
-                "  [!] Playwright could not launch Chromium. Install the missing system "
-                "libraries and browser dependencies, then run: playwright install --with-deps"
-            )
-            return None
+            await page.goto(url, wait_until="networkidle", timeout=15000)
+        except Exception as e:
+            print(f"  [!] Failed to fully load or timed out: {e}")
 
+        unique_trackers = sorted(set(found_trackers))
+        if unique_trackers:
+            print(f"  [!] Found {len(unique_trackers)} trackers/pixels:")
+            for tracker in unique_trackers:
+                print(f"      - {tracker}")
+        else:
+            print("  [*] No known tracking pixels detected.")
+
+        return {
+            "url": url,
+            "trackers": unique_trackers,
+        }
+    finally:
         try:
-            context = await browser.new_context()
-            page = await context.new_page()
-
-            found_trackers = []
-
-            # Intercept and analyze every network request before it is sent
-            page.on("request", lambda request: analyze_request(request, domain, found_trackers))
-
-            try:
-                # wait_until="networkidle" ensures we wait for delayed tracking scripts to fire
-                await page.goto(url, wait_until="networkidle", timeout=15000)
-            except Exception as e:
-                print(f"  [!] Failed to fully load or timed out: {e}")
-
             await browser.close()
-
-            # Output the results
-            unique_trackers = sorted(set(found_trackers))
-            if unique_trackers:
-                print(f"  [!] Found {len(unique_trackers)} trackers/pixels:")
-                for tracker in unique_trackers:
-                    print(f"      - {tracker}")
-            else:
-                print("  [*] No known tracking pixels detected.")
-
-            return {
-                "url": url,
-                "trackers": unique_trackers,
-            }
-        finally:
-            try:
-                await browser.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
 def analyze_request(request, main_domain, found_trackers):
     req_url = request.url
@@ -93,30 +86,30 @@ def analyze_request(request, main_domain, found_trackers):
 
 async def main():
     domains_to_check = [
-        # "academy.takeflightinteractive.com",
-        # "flitesim.com",
-        # "flightsim.to",
-        # "flightsimbuilder.com",
-        # "forums.flightsimulator.com",
-        # "forums.x-plane.org",
-        # "navigraph.com",
-        # "ruckerworks.com",
-        # "virtualtours.senecapolytechnic.ca",
-        # "x-plane.to",
-        # "autonomous.ai",
-        # "belkin.com",
-        # "bhphotovideo.com",
-        # "chairpartsonline.com",
-        # "corsair.com",
-        # "elgato.com",
-        # "legacy.coolermaster.com",
-        # "linustechtips.com",
-        # "makerworld.com",
-        # "marketplace.elgato.com",
-        # "mtsim.com",
-        # "nextlevelracing.com",
-        # "shop.busyboxsign.com",
-        # "smallrig.com",
+        "academy.takeflightinteractive.com",
+        "flitesim.com",
+        "flightsim.to",
+        "flightsimbuilder.com",
+        "forums.flightsimulator.com",
+        "forums.x-plane.org",
+        "navigraph.com",
+        "ruckerworks.com",
+        "virtualtours.senecapolytechnic.ca",
+        "x-plane.to",
+        "autonomous.ai",
+        "belkin.com",
+        "bhphotovideo.com",
+        "chairpartsonline.com",
+        "corsair.com",
+        "elgato.com",
+        "legacy.coolermaster.com",
+        "linustechtips.com",
+        "makerworld.com",
+        "marketplace.elgato.com",
+        "mtsim.com",
+        "nextlevelracing.com",
+        "shop.busyboxsign.com",
+        "smallrig.com",
         "subinsider.com",
         "tesmart.com",
         "us.govee.com",
@@ -139,8 +132,30 @@ async def main():
         "google.com"
     ]
     
-    for domain in domains_to_check:
-        await check_domain_for_pixels(domain)
+    async with async_playwright() as playwright:
+        semaphore = asyncio.Semaphore(4)
+
+        async def run_domain(domain):
+            async with semaphore:
+                return await check_domain_for_pixels(domain, playwright)
+
+        results = await asyncio.gather(*(run_domain(domain) for domain in domains_to_check))
+
+    results = [result for result in results if result]
+
+    urls_with_trackers = [result["url"] for result in results if result["trackers"]]
+    all_trackers = [tracker for result in results for tracker in result["trackers"]]
+
+    print("\n=== Summary ===")
+    print(f"Total number of urls scanned: {len(results)}")
+    print(f"Total number of urls found to have tracker: {len(urls_with_trackers)}")
+    print(f"Total number of trackers found: {len(all_trackers)}")
+    print("List of urls with trackers:")
+    for url in urls_with_trackers:
+        print(f"- {url}")
+    print("List of trackers found:")
+    for tracker in sorted(set(all_trackers)):
+        print(f"- {tracker}")
 
 if __name__ == "__main__":
     asyncio.run(main())
