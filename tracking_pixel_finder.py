@@ -143,18 +143,18 @@ async def main():
 
     results = [result for result in results if result]
 
-    urls_with_trackers = [result["url"] for result in results if result["trackers"]]
-    all_trackers = [tracker for result in results for tracker in result["trackers"]]
+    unique_urls_with_trackers = sorted({result["url"] for result in results if result["trackers"]})
+    unique_trackers = sorted({tracker for result in results for tracker in result["trackers"]})
 
     print("\n=== Summary ===")
     print(f"Total number of urls scanned: {len(results)}")
-    print(f"Total number of urls found to have tracker: {len(urls_with_trackers)}")
-    print(f"Total number of trackers found: {len(all_trackers)}")
-    print("List of urls with trackers:")
-    for url in urls_with_trackers:
+    print(f"Total number of unique urls found to have tracker: {len(unique_urls_with_trackers)}")
+    print(f"Total number of unique trackers found: {len(unique_trackers)}")
+    print("List of unique urls with trackers:")
+    for url in unique_urls_with_trackers:
         print(f"- {url}")
-    print("List of trackers found:")
-    for tracker in sorted(set(all_trackers)):
+    print("List of unique trackers found:")
+    for tracker in unique_trackers:
         print(f"- {tracker}")
 
 if __name__ == "__main__":
