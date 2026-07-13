@@ -2,6 +2,10 @@ import asyncio
 from playwright.async_api import async_playwright
 from urllib.parse import urlparse
 
+
+class PlaywrightLaunchError(RuntimeError):
+    """Raised when Chromium cannot be launched for scanning."""
+
 # A basic blocklist of known tracking networks (you can expand this with EasyPrivacy lists)
 KNOWN_TRACKERS = [
     "facebook.com/tr",         # Meta/Facebook Pixel
@@ -17,34 +21,54 @@ KNOWN_TRACKERS = [
 
 async def check_domain_for_pixels(domain):
     async with async_playwright() as p:
-        # Launch a headless Chromium browser
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        page = await context.new_page()
-        
-        found_trackers = []
-        
-        # Intercept and analyze every network request before it is sent
-        page.on("request", lambda request: analyze_request(request, domain, found_trackers))
-        
         url = f"https://{domain}"
         print(f"\nScanning: {url}")
-        
+
         try:
-            # wait_until="networkidle" ensures we wait for delayed tracking scripts to fire
-            await page.goto(url, wait_until="networkidle", timeout=15000)
-        except Exception as e:
-            print(f"  [!] Failed to fully load or timed out: {e}")
-            
-        await browser.close()
-        
-        # Output the results
-        if found_trackers:
-            print(f"  [!] Found {len(set(found_trackers))} trackers/pixels:")
-            for tracker in set(found_trackers):
-                print(f"      - {tracker}")
-        else:
-            print("  [*] No known tracking pixels detected.")
+            # Launch a headless Chromium browser
+            browser = await p.chromium.launch(headless=True)
+        except Exception:
+            print(
+                "  [!] Playwright could not launch Chromium. Install the missing system "
+                "libraries and browser dependencies, then run: playwright install --with-deps"
+            )
+            return None
+
+        try:
+            context = await browser.new_context()
+            page = await context.new_page()
+
+            found_trackers = []
+
+            # Intercept and analyze every network request before it is sent
+            page.on("request", lambda request: analyze_request(request, domain, found_trackers))
+
+            try:
+                # wait_until="networkidle" ensures we wait for delayed tracking scripts to fire
+                await page.goto(url, wait_until="networkidle", timeout=15000)
+            except Exception as e:
+                print(f"  [!] Failed to fully load or timed out: {e}")
+
+            await browser.close()
+
+            # Output the results
+            unique_trackers = sorted(set(found_trackers))
+            if unique_trackers:
+                print(f"  [!] Found {len(unique_trackers)} trackers/pixels:")
+                for tracker in unique_trackers:
+                    print(f"      - {tracker}")
+            else:
+                print("  [*] No known tracking pixels detected.")
+
+            return {
+                "url": url,
+                "trackers": unique_trackers,
+            }
+        finally:
+            try:
+                await browser.close()
+            except Exception:
+                pass
 
 def analyze_request(request, main_domain, found_trackers):
     req_url = request.url
@@ -69,30 +93,30 @@ def analyze_request(request, main_domain, found_trackers):
 
 async def main():
     domains_to_check = [
-        "academy.takeflightinteractive.com",
-        "flitesim.com",
-        "flightsim.to",
-        "flightsimbuilder.com",
-        "forums.flightsimulator.com",
-        "forums.x-plane.org",
-        "navigraph.com",
-        "ruckerworks.com",
-        "virtualtours.senecapolytechnic.ca",
-        "x-plane.to",
-        "autonomous.ai",
-        "belkin.com",
-        "bhphotovideo.com",
-        "chairpartsonline.com",
-        "corsair.com",
-        "elgato.com",
-        "legacy.coolermaster.com",
-        "linustechtips.com",
-        "makerworld.com",
-        "marketplace.elgato.com",
-        "mtsim.com",
-        "nextlevelracing.com",
-        "shop.busyboxsign.com",
-        "smallrig.com",
+        # "academy.takeflightinteractive.com",
+        # "flitesim.com",
+        # "flightsim.to",
+        # "flightsimbuilder.com",
+        # "forums.flightsimulator.com",
+        # "forums.x-plane.org",
+        # "navigraph.com",
+        # "ruckerworks.com",
+        # "virtualtours.senecapolytechnic.ca",
+        # "x-plane.to",
+        # "autonomous.ai",
+        # "belkin.com",
+        # "bhphotovideo.com",
+        # "chairpartsonline.com",
+        # "corsair.com",
+        # "elgato.com",
+        # "legacy.coolermaster.com",
+        # "linustechtips.com",
+        # "makerworld.com",
+        # "marketplace.elgato.com",
+        # "mtsim.com",
+        # "nextlevelracing.com",
+        # "shop.busyboxsign.com",
+        # "smallrig.com",
         "subinsider.com",
         "tesmart.com",
         "us.govee.com",
